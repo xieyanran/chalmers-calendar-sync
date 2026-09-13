@@ -9,32 +9,39 @@ from icalendar import Calendar
 
 from src.normalize import Event, translate_sv_en
 
-# Chalmers' TimeEdit packs cross-listed course codes, the course name
-# (repeated once per code), the activity type, and programme/cohort tags
-# into one comma-separated SUMMARY, e.g.:
+# Chalmers' TimeEdit packs cross-listed course codes, an optional course
+# name (repeated once per code), the activity type, and programme/cohort
+# tags into one comma-separated SUMMARY. Two template variants observed so
+# far:
 #   "Course code: DIT969GU. Name: Djup maskininlärning, Course code:
 #    SSY340_50_HT26_35125. Name: Djup maskininlärning, Föreläsning,
 #    MPCAS-2, MPALG-2, MPCSN-2, MPSYS-2, MPMED-2, MPDSC-2"
-# The "Course code" label comes back in Swedish ("Kurskod") on some fetches
-# and English on others -- observed flipping between two runs of the *same*
-# feed URL minutes apart, so this has to accept both rather than assume
-# either is stable. The Swedish template also just omits the "Name:" label
-# entirely (English: "Course code: X. Name: Y" / Swedish: "Kurskod: X. Y",
-# no "Namn:") -- hence the label+colon being optional here.
+#   "Kurskod: DIT969GU, Kurskod: SSY340_50_HT26_35125, Aktivitet:
+#    Konsultationstid, Klasskod: MPCAS-2, Klasskod: MPALG-2"
+# i.e. the course name and the "Aktivitet"/programme-tag labels are
+# sometimes present and sometimes not, and labels flip between Swedish and
+# English -- observed flipping between two runs of the *same* feed URL
+# minutes apart, so this has to accept every variant rather than assume any
+# one is stable.
 _COURSE_RE = re.compile(
-    r"^(?:Course code|Kurskod):\s*(?P<code>.+?)\.\s*(?:(?:Name|Namn):\s*)?(?P<name>.+)$"
+    r"^(?:Course code|Kurskod):\s*(?P<code>.+?)"
+    r"(?:\.\s*(?:(?:Name|Namn):\s*)?(?P<name>.+))?$"
 )
-# Programme/cohort tags like "MPCAS-2" -- not useful on a personal calendar.
-_PROGRAMME_RE = re.compile(r"^[A-ZÅÄÖ]{2,8}-\d+$")
+_ACTIVITY_LABELS = {"Activity", "Aktivitet"}
+# Programme/cohort tags like "MPCAS-2" or "Klasskod: MPCAS-2" -- not useful
+# on a personal calendar.
+_PROGRAMME_LABELS = {"Class code", "Klasskod"}
+_BARE_PROGRAMME_RE = re.compile(r"^[A-ZÅÄÖ]{2,8}-\d+$")
 
 # LOCATION is similarly a ". "-joined bag of "Key: value" pairs (Rum,
-# Utrustning, Kartlänk, Hus, Campus, Antal datorer, ...) plus bare
+# Lokalnamn, Utrustning, Kartlänk, Hus, Campus, Antal datorer, ...) plus bare
 # continuation words for multi-value keys (e.g. equipment lists). Only these
 # three are worth keeping on a calendar. Keyed bilingually for the same
 # reason as _COURSE_RE above -- not confirmed Swedish-only, just under-sampled.
 _LOCATION_KEYS = {
     "Rum": "room",
     "Room": "room",
+    "Lokalnamn": "room",
     "Hus": "building",
     "Building": "building",
     "Campus": "campus",
@@ -90,24 +97,36 @@ def _parse_summary(summary: str, translations: dict[str, str] | None) -> str:
         course_match = _COURSE_RE.match(part)
         if course_match:
             code = _short_course_code(course_match.group("code"))
-            name = course_match.group("name").strip()
+            name = (course_match.group("name") or "").strip()
             if code not in codes:
                 codes.append(code)
-            if name not in names:
+            if name and name not in names:
                 names.append(name)
-        elif _PROGRAMME_RE.match(part):
+            continue
+        if _BARE_PROGRAMME_RE.match(part):
             continue  # cohort/programme tag, e.g. "MPCAS-2"
+        label, _, value = part.partition(": ")
+        if label in _PROGRAMME_LABELS:
+            continue  # cohort/programme tag, e.g. "Klasskod: MPCAS-2"
+        if label in _ACTIVITY_LABELS:
+            activities.append(translate_sv_en(value.strip(), translations))
         else:
             activities.append(translate_sv_en(part, translations))
 
-    if not names:
+    if not codes:
         # Unrecognized layout (a template variant not seen before) -- don't
-        # fabricate structure from it, just translate what we can.
-        return translate_sv_en(summary, translations)
+        # fabricate structure from it, just translate what we can. Some
+        # entries (e.g. "Omtentamen/Re-exam") are already bilingual, so
+        # translating "Omtentamen" would otherwise duplicate the English
+        # half into "Re-exam/Re-exam" -- collapse that back down.
+        return _dedupe_slash(translate_sv_en(summary, translations))
 
-    course_label = translate_sv_en(" / ".join(names), translations)
-    if codes:
+    if names:
+        course_label = translate_sv_en(" / ".join(names), translations)
         course_label += f" [{'/'.join(codes)}]"
+    else:
+        # This template variant doesn't include the course name at all.
+        course_label = "/".join(codes)
     if activities:
         return f"{' / '.join(activities)} - {course_label}"
     return course_label
@@ -115,6 +134,12 @@ def _parse_summary(summary: str, translations: dict[str, str] | None) -> str:
 
 def _short_course_code(code: str) -> str:
     return code.split("_")[0]
+
+
+def _dedupe_slash(text: str) -> str:
+    parts = [p.strip() for p in text.split("/")]
+    deduped = list(dict.fromkeys(parts))
+    return "/".join(deduped)
 
 
 def _parse_location(location: str) -> str:

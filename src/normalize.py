@@ -51,6 +51,8 @@ DEFAULT_SV_EN = {
     "Seminarium": "Seminar",
     "Tentamen": "Exam",
     "Omtentamen": "Re-exam",
+    "Centralt administrerad dugga": "Centrally administered quiz",
+    "Dugga": "Quiz",
     "Sal": "Room",
     "Grupp": "Group",
     "Lektion": "Lesson",
