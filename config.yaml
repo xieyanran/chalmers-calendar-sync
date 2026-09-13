@@ -30,21 +30,20 @@ timeedit:
   # be fetchable via plain HTTP GET, not a one-off manual download).
   ics_url_env: "TIMEEDIT_ICS_URL"
   # Swedish -> English overrides/additions on top of the defaults in
-  # src/normalize.py. Add terms here as you see ones the defaults miss --
-  # e.g. course names, which aren't in any fixed vocabulary. Only takes
-  # effect when the feed's SUMMARY includes a Name/Namn field to translate
-  # -- some TimeEdit feed variants (e.g. the "public" schedule links) omit
-  # it entirely, in which case `course_names` below is what supplies the
-  # name instead. The two below are just a worked example (real Chalmers
-  # courses) -- replace with your own once you've run --dry-run against
-  # your own feed.
+  # src/normalize.py, for the activity-type words (Föreläsning, Aktivitet
+  # values, etc). Add terms here as you see ones the defaults miss.
   translations:
     Djup maskininlärning: Deep Machine Learning
     Etisk hackning och penetrationstestning: Ethical Hacking and Penetration Testing
-  # Short-course-code -> display-name fallback, used only when SUMMARY has
-  # no Name/Namn field at all. Codes are as they appear after "Kurskod:"/
-  # "Course code:", truncated at the first "_" (e.g. "SSY340_50_HT26_35125"
-  # -> "SSY340") -- run --dry-run to see the codes your feed actually uses.
+  # Short-course-code -> display-name, always used for the course name in
+  # the title -- this takes priority over whatever Name/Namn value (if any)
+  # the feed itself sends, since TimeEdit's SUMMARY layout has changed
+  # shape between runs of the very same feed URL (sometimes with a name,
+  # sometimes without). Pinning it here is what keeps titles stable
+  # regardless of which variant TimeEdit happens to send. Codes are as they
+  # appear after "Kurskod:"/"Course code:", truncated at the first "_"
+  # (e.g. "SSY340_50_HT26_35125" -> "SSY340") -- run --dry-run to see the
+  # codes your feed actually uses, and add a line here for each new course.
   course_names:
     DIT969GU: Deep Machine Learning
     SSY340: Deep Machine Learning

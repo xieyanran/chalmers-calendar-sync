@@ -99,7 +99,7 @@ def _parse_summary(
     course_names: dict[str, str] | None = None,
 ) -> str:
     codes: list[str] = []
-    names: list[str] = []
+    feed_names: dict[str, str] = {}
     activities: list[str] = []
 
     for part in summary.split(", "):
@@ -112,8 +112,8 @@ def _parse_summary(
             name = (course_match.group("name") or "").strip()
             if code not in codes:
                 codes.append(code)
-            if name and name not in names:
-                names.append(name)
+            if name and code not in feed_names:
+                feed_names[code] = name
             continue
         if _BARE_PROGRAMME_RE.match(part):
             continue  # cohort/programme tag, e.g. "MPCAS-2"
@@ -133,13 +133,17 @@ def _parse_summary(
         # half into "Re-exam/Re-exam" -- collapse that back down.
         return _dedupe_slash(translate_sv_en(summary, translations))
 
-    if not names and course_names:
-        # This template variant doesn't include the course name at all --
-        # fall back to the configured code -> name mapping.
-        for code in codes:
-            mapped = course_names.get(code)
-            if mapped and mapped not in names:
-                names.append(mapped)
+    # config.yaml's course_names always wins over whatever the feed itself
+    # sends as the Name/Namn field: TimeEdit's SUMMARY layout has been
+    # observed changing shape between runs of the very same feed URL (see
+    # module docstring), so pinning the display name in config is what
+    # keeps titles stable across those flips instead of just papering over
+    # the one variant seen so far.
+    names: list[str] = []
+    for code in codes:
+        name = (course_names or {}).get(code) or feed_names.get(code)
+        if name and name not in names:
+            names.append(name)
 
     if names:
         course_label = translate_sv_en(" / ".join(names), translations)
