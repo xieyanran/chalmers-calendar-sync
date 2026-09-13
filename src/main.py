@@ -52,7 +52,11 @@ def main() -> None:
 
     timeedit_url = os.environ.get(config["timeedit"]["ics_url_env"])
     if timeedit_url:
-        timeedit_events = timeedit.fetch(timeedit_url, config["timeedit"].get("translations"))
+        timeedit_events = timeedit.fetch(
+            timeedit_url,
+            config["timeedit"].get("translations"),
+            config["timeedit"].get("course_names"),
+        )
         logger.info("Fetched %d events from TimeEdit", len(timeedit_events))
         events += timeedit_events
     else:

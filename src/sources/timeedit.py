@@ -48,11 +48,19 @@ _LOCATION_KEYS = {
 }
 
 
-def fetch(ics_url: str | None = None, translations: dict[str, str] | None = None) -> list[Event]:
+def fetch(
+    ics_url: str | None = None,
+    translations: dict[str, str] | None = None,
+    course_names: dict[str, str] | None = None,
+) -> list[Event]:
     """Fetch TimeEdit's ICS *subscription* URL (not a one-off manual export --
     it must be fetchable with a plain HTTP GET, no login). Look for a
     "Subscribe"/"Prenumerera" link in the TimeEdit UI, not the download
-    button."""
+    button.
+
+    `course_names` is a short-course-code -> display-name fallback (see
+    config.yaml) for feed variants whose SUMMARY omits the Name field
+    entirely."""
     url = ics_url or os.environ["TIMEEDIT_ICS_URL"]
     response = requests.get(url, timeout=30)
     response.raise_for_status()
@@ -76,7 +84,7 @@ def fetch(ics_url: str | None = None, translations: dict[str, str] | None = None
                 source="timeedit",
                 source_uid=uid,
                 category="class",
-                title=_parse_summary(raw_summary, translations),
+                title=_parse_summary(raw_summary, translations, course_names),
                 start=start,
                 end=end,
                 location=_parse_location(raw_location),
@@ -85,7 +93,11 @@ def fetch(ics_url: str | None = None, translations: dict[str, str] | None = None
     return events
 
 
-def _parse_summary(summary: str, translations: dict[str, str] | None) -> str:
+def _parse_summary(
+    summary: str,
+    translations: dict[str, str] | None,
+    course_names: dict[str, str] | None = None,
+) -> str:
     codes: list[str] = []
     names: list[str] = []
     activities: list[str] = []
@@ -121,11 +133,18 @@ def _parse_summary(summary: str, translations: dict[str, str] | None) -> str:
         # half into "Re-exam/Re-exam" -- collapse that back down.
         return _dedupe_slash(translate_sv_en(summary, translations))
 
+    if not names and course_names:
+        # This template variant doesn't include the course name at all --
+        # fall back to the configured code -> name mapping.
+        for code in codes:
+            mapped = course_names.get(code)
+            if mapped and mapped not in names:
+                names.append(mapped)
+
     if names:
         course_label = translate_sv_en(" / ".join(names), translations)
         course_label += f" [{'/'.join(codes)}]"
     else:
-        # This template variant doesn't include the course name at all.
         course_label = "/".join(codes)
     if activities:
         return f"{' / '.join(activities)} - {course_label}"

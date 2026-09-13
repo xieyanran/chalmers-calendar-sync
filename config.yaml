@@ -31,12 +31,25 @@ timeedit:
   ics_url_env: "TIMEEDIT_ICS_URL"
   # Swedish -> English overrides/additions on top of the defaults in
   # src/normalize.py. Add terms here as you see ones the defaults miss --
-  # e.g. course names, which aren't in any fixed vocabulary. The two below
-  # are just a worked example (real Chalmers courses) -- replace with your
-  # own once you've run --dry-run against your own feed.
+  # e.g. course names, which aren't in any fixed vocabulary. Only takes
+  # effect when the feed's SUMMARY includes a Name/Namn field to translate
+  # -- some TimeEdit feed variants (e.g. the "public" schedule links) omit
+  # it entirely, in which case `course_names` below is what supplies the
+  # name instead. The two below are just a worked example (real Chalmers
+  # courses) -- replace with your own once you've run --dry-run against
+  # your own feed.
   translations:
     Djup maskininlärning: Deep Machine Learning
     Etisk hackning och penetrationstestning: Ethical Hacking and Penetration Testing
+  # Short-course-code -> display-name fallback, used only when SUMMARY has
+  # no Name/Namn field at all. Codes are as they appear after "Kurskod:"/
+  # "Course code:", truncated at the first "_" (e.g. "SSY340_50_HT26_35125"
+  # -> "SSY340") -- run --dry-run to see the codes your feed actually uses.
+  course_names:
+    DIT969GU: Deep Machine Learning
+    SSY340: Deep Machine Learning
+    DAT370: Ethical Hacking and Penetration Testing
+    DIT989GU: Ethical Hacking and Penetration Testing
 
 ladok:
   # Not wired up yet -- see src/sources/ladok.py.
