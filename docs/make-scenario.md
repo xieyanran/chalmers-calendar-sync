@@ -7,10 +7,8 @@ that's easier to get right in real code: parsing Chalmers' ICS quirks and
 diffing against Google Calendar's current state. See the repo README for
 the high-level picture; this doc is the module-by-module build steps.
 
-I can't create the scenario for you (no Make API/MCP access from here) --
-this is a build guide, not an importable blueprint. Exact field labels
-below may drift slightly from what you see in the Make UI (it changes
-over time); the module types and data flow won't.
+Exact field labels below may drift slightly from what you see in the Make
+UI (it changes over time); the module types and data flow won't.
 
 ## Prerequisites
 
