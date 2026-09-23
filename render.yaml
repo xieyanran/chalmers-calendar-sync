@@ -1,0 +1,29 @@
+# Render Blueprint for the calendar-normalizer API (src/api.py) -- the
+# Python side of the Make.com architecture described in
+# docs/make-scenario.md. Deploy: Render dashboard -> New -> Blueprint ->
+# point at this repo. The three secrets below (sync: false) are prompted
+# for at blueprint-creation time and never stored in git:
+#   GOOGLE_TOKEN_JSON  -- full contents of the token.json from `python -m
+#                         src.auth_setup` (same value as the GitHub Actions
+#                         GOOGLE_TOKEN_JSON secret)
+#   GOOGLE_CALENDAR_ID -- same value as in your local .env
+#   API_KEY            -- a random secret you generate yourself (e.g.
+#                         `python -c "import secrets; print(secrets.token_urlsafe(32))"`),
+#                         shared with the Make scenario's HTTP header
+services:
+  - type: web
+    name: chalmers-calendar-normalizer
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: GOOGLE_TOKEN_JSON
+        sync: false
+      - key: GOOGLE_CALENDAR_ID
+        sync: false
+      - key: API_KEY
+        sync: false

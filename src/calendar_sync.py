@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Iterable
+from urllib.parse import quote
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -22,18 +26,48 @@ MANAGED_BY_KEY = "managedBy"
 MANAGED_BY_VALUE = "chalmers-calendar-sync"
 SOURCE_UID_KEY = "sourceUid"
 
+_EVENTS_API_BASE = "https://www.googleapis.com/calendar/v3/calendars"
+
 
 def get_service(token_file: str):
-    try:
-        credentials = Credentials.from_authorized_user_file(token_file, SCOPES)
-    except FileNotFoundError:
-        raise SystemExit(
-            f"{token_file} not found. Run `python -m src.auth_setup` once locally "
-            "to log in and create it (see README)."
-        )
+    # On a long-lived host (e.g. the Render deploy backing src/api.py) we'd
+    # rather never write the refresh token to disk -- GOOGLE_TOKEN_JSON (the
+    # same value the GOOGLE_TOKEN_JSON GitHub Actions secret holds) lets the
+    # credentials be built straight from the env instead.
+    token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+    if token_json:
+        credentials = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+    else:
+        try:
+            credentials = Credentials.from_authorized_user_file(token_file, SCOPES)
+        except FileNotFoundError:
+            raise SystemExit(
+                f"{token_file} not found. Run `python -m src.auth_setup` once locally "
+                "to log in and create it (see README)."
+            )
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
     return build("calendar", "v3", credentials=credentials, cache_discovery=False)
+
+
+@dataclass
+class Action:
+    """One pending Google Calendar write, computed by plan_sync(). `url`/
+    `method` are the real Calendar REST endpoint for this action -- so a
+    caller with its own Google OAuth connection (e.g. a Make.com HTTP
+    module) can execute it directly, without re-deriving anything."""
+
+    kind: str  # "create" | "update" | "delete"
+    title: str
+    method: str  # "POST" | "PATCH" | "DELETE"
+    url: str
+    event_id: str | None = None  # set for update/delete
+    body: dict | None = None  # set for create/update
+
+
+def _event_url(calendar_id: str, event_id: str | None = None) -> str:
+    base = f"{_EVENTS_API_BASE}/{quote(calendar_id, safe='')}/events"
+    return f"{base}/{quote(event_id, safe='')}" if event_id else base
 
 
 def _to_google_event(event: Event, reminders_minutes: list[int]) -> dict:
@@ -117,20 +151,23 @@ def _needs_update(google_event: dict, new_body: dict) -> bool:
     return False
 
 
-def sync_events(
+def plan_sync(
     service,
     calendar_id: str,
     events: Iterable[Event],
     reminders_by_category: dict[str, list[int]],
-    dry_run: bool = False,
-) -> dict[str, int]:
-    """Idempotent upsert: insert new events, update changed ones, delete ones
-    that disappeared from the source. Google Calendar is the only state we
-    keep — matched via the sourceUid stashed in extendedProperties.private,
-    so re-running this never creates duplicates."""
+) -> tuple[list[Action], dict[str, int]]:
+    """Diff `events` against Google Calendar's current state and return what
+    would need to change, without writing anything. Matched via the
+    sourceUid stashed in extendedProperties.private, so this is idempotent:
+    re-applying the same plan twice never creates duplicates. `stats` is
+    derived from the diff itself, so it's accurate even if the caller never
+    applies the plan (e.g. --dry-run, or a Make.com scenario that executes
+    the actions itself)."""
     events = list(events)
     existing = _list_managed_events(service, calendar_id)
     seen_uids: set[str] = set()
+    actions: list[Action] = []
     stats = {"created": 0, "updated": 0, "deleted": 0, "unchanged": 0}
 
     for event in events:
@@ -141,27 +178,80 @@ def sync_events(
         if event.uid in existing:
             google_event = existing[event.uid]
             if _needs_update(google_event, body):
-                if not dry_run:
-                    service.events().patch(
-                        calendarId=calendar_id, eventId=google_event["id"], body=body
-                    ).execute()
+                actions.append(
+                    Action(
+                        kind="update",
+                        title=event.title,
+                        method="PATCH",
+                        url=_event_url(calendar_id, google_event["id"]),
+                        event_id=google_event["id"],
+                        body=body,
+                    )
+                )
                 stats["updated"] += 1
-                logger.info("Updated: %s", event.title)
             else:
                 stats["unchanged"] += 1
         else:
-            if not dry_run:
-                service.events().insert(calendarId=calendar_id, body=body).execute()
+            actions.append(
+                Action(
+                    kind="create",
+                    title=event.title,
+                    method="POST",
+                    url=_event_url(calendar_id),
+                    body=body,
+                )
+            )
             stats["created"] += 1
-            logger.info("Created: %s", event.title)
 
     for source_uid, google_event in existing.items():
         if source_uid not in seen_uids:
-            if not dry_run:
-                service.events().delete(
-                    calendarId=calendar_id, eventId=google_event["id"]
-                ).execute()
+            actions.append(
+                Action(
+                    kind="delete",
+                    title=google_event.get("summary", ""),
+                    method="DELETE",
+                    url=_event_url(calendar_id, google_event["id"]),
+                    event_id=google_event["id"],
+                )
+            )
             stats["deleted"] += 1
-            logger.info("Deleted: %s", google_event.get("summary"))
 
+    return actions, stats
+
+
+def apply_actions(service, calendar_id: str, actions: Iterable[Action]) -> None:
+    """Execute a plan from plan_sync() via the googleapiclient service
+    (rather than the raw method/url on each Action, which is there for
+    non-Python callers like a Make.com HTTP module)."""
+    for action in actions:
+        if action.kind == "create":
+            service.events().insert(calendarId=calendar_id, body=action.body).execute()
+            logger.info("Created: %s", action.title)
+        elif action.kind == "update":
+            service.events().patch(
+                calendarId=calendar_id, eventId=action.event_id, body=action.body
+            ).execute()
+            logger.info("Updated: %s", action.title)
+        elif action.kind == "delete":
+            service.events().delete(calendarId=calendar_id, eventId=action.event_id).execute()
+            logger.info("Deleted: %s", action.title)
+
+
+def sync_events(
+    service,
+    calendar_id: str,
+    events: Iterable[Event],
+    reminders_by_category: dict[str, list[int]],
+    dry_run: bool = False,
+) -> dict[str, int]:
+    """Idempotent upsert: insert new events, update changed ones, delete ones
+    that disappeared from the source. Thin wrapper around plan_sync() +
+    apply_actions() for the CLI path -- see src/api.py for the split-apart
+    version a Make.com scenario drives instead."""
+    actions, stats = plan_sync(service, calendar_id, events, reminders_by_category)
+    if dry_run:
+        for action in actions:
+            logger.info("Would %s: %s", action.kind, action.title)
+    else:
+        apply_actions(service, calendar_id, actions)
     return stats

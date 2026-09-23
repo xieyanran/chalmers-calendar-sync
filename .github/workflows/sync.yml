@@ -1,8 +1,11 @@
 name: Sync calendars
 
 on:
-  schedule:
-    - cron: "0 */4 * * *" # every 4 hours; adjust as you like
+  # Disabled by default -- Make.com is now the primary scheduler (see
+  # docs/make-scenario.md). Uncomment to fall back to this if Make has an
+  # outage or you go over its free-tier operation quota:
+  # schedule:
+  #   - cron: "0 */4 * * *" # every 4 hours; adjust as you like
   workflow_dispatch: {} # lets you trigger a run manually from the Actions tab
 
 jobs:

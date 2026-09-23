@@ -63,11 +63,60 @@ was written against Chalmers' actual TimeEdit field layout but course
 names still need adding to `config.yaml`'s `timeedit.translations` as they
 show up (there's no general Swedish translator, just a fixed dictionary).
 
+## 🔀 Low-code orchestration (Make.com)
+
+The primary way to run this on a schedule is now
+[Make.com](https://www.make.com), with Python doing only the parts that
+are easier to get right in real code:
+
+```
+Make Scheduler
+     │
+     ├─ fetch Canvas ICS ──┐
+     └─ fetch TimeEdit ICS ┘
+                 │
+                 ↓
+     POST → Python API (src/api.py, on Render)
+              parses the ICS quirks, diffs against
+              Google Calendar's current state
+                 │
+                 ↓
+     normalized create/update/delete actions
+                 │
+                 ↓
+     Make executes them against Google Calendar
+                 │
+                 ↓
+     (optional) Discord / Email notification
+```
+
+Setup:
+1. Deploy `src/api.py`: Render dashboard -> New -> Blueprint -> point at
+   this repo (`render.yaml` is already set up) -> fill in the
+   `GOOGLE_TOKEN_JSON`, `GOOGLE_CALENDAR_ID`, and `API_KEY` secrets it
+   prompts for (`GOOGLE_TOKEN_JSON` is the same value as the GitHub
+   Actions secret below; generate `API_KEY` with
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`).
+2. Build the Make scenario: see **[docs/make-scenario.md](docs/make-scenario.md)**
+   for the full module-by-module walkthrough.
+
+Why split it this way: Make owns scheduling, HTTP fetching, the actual
+Google Calendar writes, and notifications -- all visible/editable in
+Make's UI. Python keeps the part that's genuinely fiddly to get right
+visually: matching events across runs so re-syncing never creates
+duplicates (see `plan_sync` in `src/calendar_sync.py`).
+
 ## 🤖 Automation
 
-`.github/workflows/sync.yml` runs the sync every 4 hours via GitHub
-Actions. In the repo, go to **Settings -> Secrets and variables ->
-Actions** and add these repo secrets:
+The plain CLI (`python -m src.main`) still works standalone, and
+`.github/workflows/sync.yml` still exists to run it -- but with Make as
+the primary scheduler above, its `schedule:` trigger is commented out by
+default. It's kept as a manual/backup path: trigger it by hand from the
+Actions tab (`workflow_dispatch`), or uncomment the schedule if Make has
+an outage or you exhaust its free-tier operations quota.
+
+To use it (standalone or as the backup), go to **Settings -> Secrets and
+variables -> Actions** and add these repo secrets:
 
 - `CANVAS_ICS_URL` -- the Canvas ICS URL from step 1
 - `TIMEEDIT_ICS_URL` -- the TimeEdit ICS URL from step 2
@@ -79,5 +128,6 @@ Actions** and add these repo secrets:
 The refresh token in `token.json` doesn't expire from scheduled use, only
 from long inactivity (~6 months) or if you revoke it yourself
 (myaccount.google.com/permissions). If that happens, just re-run
-`src/auth_setup.py` locally and update the secret.
+`src/auth_setup.py` locally and update the secret (and the `GOOGLE_TOKEN_JSON`
+env var on Render, if you're running the Make architecture above).
 

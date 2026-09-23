@@ -68,7 +68,24 @@ def fetch(
     # `requests` guesses a charset from headers and gets it wrong when the
     # server omits one, mangling the Swedish characters. icalendar decodes
     # bytes correctly on its own.
-    calendar = Calendar.from_ical(response.content)
+    return parse(response.content, translations, course_names)
+
+
+def parse(
+    ics_data: bytes | str,
+    translations: dict[str, str] | None = None,
+    course_names: dict[str, str] | None = None,
+) -> list[Event]:
+    """Same as fetch(), but from ICS content someone else already fetched --
+    e.g. a Make.com scenario that fetches the feed itself and POSTs the
+    contents to src/api.py. If `ics_data` is already a decoded `str` (as it
+    will be, arriving inside a JSON request body), re-encode to UTF-8 first
+    for the same reason fetch() avoids requests' charset guessing above --
+    icalendar wants bytes it can decode itself, not text some other layer
+    may have already decoded with the wrong charset."""
+    if isinstance(ics_data, str):
+        ics_data = ics_data.encode("utf-8")
+    calendar = Calendar.from_ical(ics_data)
 
     events: list[Event] = []
     for component in calendar.walk("VEVENT"):

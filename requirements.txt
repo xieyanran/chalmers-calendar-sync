@@ -5,3 +5,8 @@ google-api-python-client>=2.100
 google-auth>=2.23
 google-auth-oauthlib>=1.2
 PyYAML>=6.0
+
+# calendar-normalizer API (src/api.py), called by the Make.com scenario --
+# see docs/make-scenario.md. Not needed for the plain CLI (src/main.py).
+fastapi>=0.115
+uvicorn>=0.30

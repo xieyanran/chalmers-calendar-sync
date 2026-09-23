@@ -16,7 +16,16 @@ def fetch(ics_url: str | None = None) -> list[Event]:
     url = ics_url or os.environ["CANVAS_ICS_URL"]
     response = requests.get(url, timeout=30)
     response.raise_for_status()
-    calendar = Calendar.from_ical(response.content)  # see timeedit.py: avoid requests' charset guessing
+    return parse(response.content)  # see timeedit.py: avoid requests' charset guessing
+
+
+def parse(ics_data: bytes | str) -> list[Event]:
+    """Same as fetch(), but from ICS content someone else already fetched --
+    e.g. a Make.com scenario that fetches the feed itself and POSTs the
+    contents to src/api.py."""
+    if isinstance(ics_data, str):
+        ics_data = ics_data.encode("utf-8")
+    calendar = Calendar.from_ical(ics_data)
 
     events: list[Event] = []
     for component in calendar.walk("VEVENT"):
