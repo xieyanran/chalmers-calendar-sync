@@ -49,6 +49,9 @@ timeedit:
     SSY340: Deep Machine Learning
     DAT370: Ethical Hacking and Penetration Testing
     DIT989GU: Ethical Hacking and Penetration Testing
+    DAT295: Autonomous and cooperative vehicular systems
+    DIT669GU: Autonomous and cooperative vehicular systems
+    SSY317: Advanced probabilistic machine learning
 
 ladok:
   # Not wired up yet -- see src/sources/ladok.py.
